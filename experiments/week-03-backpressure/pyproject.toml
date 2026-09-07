@@ -1,0 +1,9 @@
+[project]
+name = "week-03-backpressure"
+version = "0.0.0"
+description = "Learning experiment; see README.md for hypothesis and results."
+requires-python = ">=3.12"
+dependencies = []
+
+[tool.uv]
+package = false

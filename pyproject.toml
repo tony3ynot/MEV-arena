@@ -1,0 +1,63 @@
+[project]
+name = "mev-arena"
+version = "0.0.0"
+description = "Real-time MEV / transaction-ordering simulator. Educational only; no real assets."
+requires-python = ">=3.12"
+license = "MIT"
+dependencies = [
+  "simulation-engine",
+  "mev-arena-api",
+]
+
+[dependency-groups]
+dev = [
+  "pytest>=8",
+  "hypothesis>=6",
+  "ruff>=0.6",
+  "pyright>=1.1",
+  "import-linter>=2.15",
+]
+
+[tool.uv]
+package = false
+
+[tool.uv.workspace]
+members = ["apps/api", "packages/simulation-engine", "experiments/*"]
+
+[tool.uv.sources]
+simulation-engine = { workspace = true }
+mev-arena-api = { workspace = true }
+
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "B", "UP", "SIM"]
+
+[tool.pyright]
+pythonVersion = "3.12"
+typeCheckingMode = "strict"
+venvPath = "."
+venv = ".venv"
+include = ["apps", "packages", "experiments"]
+
+[tool.pytest.ini_options]
+testpaths = ["apps", "packages", "experiments"]
+
+[tool.importlinter]
+root_packages = ["simulation_engine", "mev_arena_api"]
+include_external_packages = true
+
+[[tool.importlinter.contracts]]
+name = "simulation_engine is a pure core: no app, framework, or I/O imports (ADR-0006)"
+type = "forbidden"
+source_modules = ["simulation_engine"]
+forbidden_modules = [
+  "mev_arena_api",
+  "fastapi", "starlette", "uvicorn", "pydantic",
+  "redis", "asyncpg", "psycopg", "sqlalchemy",
+  "aiokafka", "confluent_kafka",
+  "opentelemetry",
+  "httpx", "requests",
+]

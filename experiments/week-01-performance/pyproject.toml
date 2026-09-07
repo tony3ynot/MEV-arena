@@ -1,0 +1,9 @@
+[project]
+name = "week-01-performance"
+version = "0.0.0"
+description = "Learning experiment; see README.md for hypothesis and results."
+requires-python = ">=3.12"
+dependencies = []
+
+[tool.uv]
+package = false

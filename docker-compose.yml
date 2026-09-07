@@ -1,0 +1,10 @@
+# MEV Arena local stack.
+# Services are added milestone by milestone (spec §18); nothing runs yet.
+#
+#   week 5  redpanda            event stream
+#   week 6  postgres, redis     ledger / projection
+#   week 7  otel-collector, prometheus, grafana
+#   week 8  anvil (optional)    local chain settlement record
+#
+# One-shot run (`docker compose up`) is a v0.1 completion criterion (spec §19).
+services: {}
