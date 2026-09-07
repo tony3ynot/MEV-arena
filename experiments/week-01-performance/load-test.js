@@ -23,6 +23,14 @@ const TIMEOUT_S = Number(__ENV.TIMEOUT_S ?? 2);
 const BASE_URL = __ENV.BASE_URL ?? "http://127.0.0.1:8000";
 const LEVELS = [0.5, 0.9, 1.1, 1.5];
 
+// Guard: a huge pool with no CAPACITY override means C = POOL_SIZE / S is meaningless (the control run needs
+// -e CAPACITY=<guess>). Fail fast instead of scheduling millions of requests per second.
+if (CAPACITY > 50000 && !__ENV.FORCE) {
+  throw new Error(
+    `CAPACITY=${CAPACITY} req/s looks wrong. For the control run pass -e CAPACITY=<loop guess>; use -e FORCE=1 to override.`,
+  );
+}
+
 function stage(index, mult) {
   const rate = Math.max(1, Math.round(CAPACITY * mult));
   const worstCaseVus = Math.min(MAX_VUS, Math.ceil(rate * TIMEOUT_S * 1.1) + 10);
