@@ -7,13 +7,13 @@ Only tests that are re-run to catch **performance regressions** live here. One-o
 | Item | Value |
 |---|---|
 | CPU | AMD Ryzen 5 PRO 4650G, 6C/12T |
-| RAM | ~7 GB visible to WSL2 (adjustable in `.wslconfig`) |
+| RAM | 10 GB allotted to WSL2 via `.wslconfig` (host has 16 GB) + 4 GB swap |
 | Disk | SSD, ext4 on a WSL2 virtual disk |
 | OS | Linux 6.6.87.2, WSL2 on Windows |
 | Python | 3.12 |
 | uv | 0.12.6 |
 | Docker | 28.3.3 |
-| k6 | not installed yet; record before week 7 |
+| k6 | 2.2.0 (user-space install in ~/.local/bin) |
 
 > The load generator, the server under test, and Redpanda/PostgreSQL/Redis all run on the **same machine**.
 > Numbers matter as before/after comparisons, not as absolutes.

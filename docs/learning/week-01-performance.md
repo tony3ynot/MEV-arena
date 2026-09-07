@@ -4,7 +4,8 @@
 
 ## Question for the week
 
-- (example) How does connection pool size relate to p99 latency?
+- When work is gated by a fixed-size pool, how do throughput and tail latency behave as load passes
+  the pool's capacity, and can Little's law predict the knee before measuring it?
 
 ## Hypothesis
 

@@ -1,9 +1,12 @@
 [project]
 name = "week-01-performance"
 version = "0.0.0"
-description = "Learning experiment; see README.md for hypothesis and results."
+description = "Learning experiment: pool-gated server under open-model load; see README.md."
 requires-python = ">=3.12"
-dependencies = []
+dependencies = [
+  "fastapi>=0.115",
+  "uvicorn[standard]>=0.30",
+]
 
 [tool.uv]
 package = false

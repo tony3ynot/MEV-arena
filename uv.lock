@@ -945,6 +945,16 @@ wheels = [
 name = "week-01-performance"
 version = "0.0.0"
 source = { virtual = "experiments/week-01-performance" }
+dependencies = [
+    { name = "fastapi" },
+    { name = "uvicorn", extra = ["standard"] },
+]
+
+[package.metadata]
+requires-dist = [
+    { name = "fastapi", specifier = ">=0.115" },
+    { name = "uvicorn", extras = ["standard"], specifier = ">=0.30" },
+]
 
 [[package]]
 name = "week-03-backpressure"
