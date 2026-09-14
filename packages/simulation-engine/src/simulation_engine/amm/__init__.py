@@ -4,6 +4,8 @@ Integer arithmetic only. Every division is an explicit floor in the protocol's f
 so the invariant ``k`` never decreases across a swap.
 """
 
+from dataclasses import replace
+
 from simulation_engine.models import BPS, SCALE, MarketState, Side
 
 
@@ -44,13 +46,7 @@ def apply_swap(market: MarketState, side: Side, amount_in: int) -> tuple[MarketS
             amount_in, market.quote_reserve, market.base_reserve, market.fee_bps
         )
         base, quote = market.base_reserve - amount_out, market.quote_reserve + amount_in
-    new_market = MarketState(
-        market_id=market.market_id,
-        base_reserve=base,
-        quote_reserve=quote,
-        fee_bps=market.fee_bps,
-        version=market.version + 1,
-    )
+    new_market = replace(market, base_reserve=base, quote_reserve=quote, version=market.version + 1)
     return new_market, amount_out
 
 

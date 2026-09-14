@@ -41,6 +41,8 @@ class MarketState:
     quote_reserve: int
     fee_bps: int
     version: int = 0
+    base_asset: str = "BASE"
+    quote_asset: str = "QUOTE"
 
     @property
     def last_price(self) -> int:
