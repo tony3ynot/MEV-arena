@@ -29,8 +29,8 @@ how amounts are represented, where the module boundaries are.
 
 | Week | Goal | Status |
 |---|---|---|
-| 1 | Requirements, SLOs, architecture, ADRs | in progress |
-| 2 | AMM + deterministic execution engine | |
+| 1 | Requirements, SLOs, architecture, ADRs | done |
+| 2 | AMM + deterministic execution engine | in progress |
 | 3 | Mempool, block builder | |
 | 4 | Three bots, real-time UI, v0.0.1 | |
 | 5 | Kafka/Redpanda event pipeline | |
@@ -40,7 +40,7 @@ how amounts are represented, where the module boundaries are.
 
 ## Running
 
-Nothing runnable yet. To set up the development environment:
+No service runs yet; the engine is exercised through its tests. To set up the development environment:
 
 ```bash
 uv sync --all-packages   # whole Python workspace: apps/api, packages/*, experiments/*

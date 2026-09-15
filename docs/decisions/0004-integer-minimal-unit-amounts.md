@@ -24,4 +24,4 @@ Division is always an explicit floor, and AMM output is rounded in the protocol'
 
 - Gain: no library; hash input is trivial
 - Accept: a conversion layer is needed wherever a human reads the UI or logs
-- Open: the scale (1e6 vs 1e18 etc.) is settled in week 2 together with the AMM and fee (bps) design
+- Settled in [ADR-0007](0007-amm-and-execution-semantics.md): scale 1e18, fee in bps on input
