@@ -57,12 +57,26 @@ At 10,000 accounts the pure-copy design already misses the 5,000 tx/s target by 
 
 ## What I learned
 
-<!-- fill in: your own words, 3–5 numbered points. Prompts:
-  1. Why was the sandwiched fill 8,167 and not ~8,700? (average price of a trade vs the spot price after it)
-  2. Price impact ≈ Δx / (x + Δx): why 10× the size gives ~10× the impact for small trades and less for large ones
-  3. What a property test caught that a worked example would not have
-  4. Why BAD_NONCE is the one failure that must not consume a nonce
--->
+1. The average price of a trade is not the price after it. Selling 100 ETH at "906 each" leaves the pool at
+   827, and the next seller trades against 827. I predicted the sandwiched fill from the average and got
+   8,700; the answer was 8,167. Price impact is ≈ Δx / (x + Δx): near-linear for small trades, so 10× the
+   size is ≈ 10× the impact, but it bends down as Δx approaches x (10 → 98 → 904 bps).
+2. Order is state. Same three transactions, two orders, different pool reserves and a different hash, because
+   fee and floor are applied on every leg. "Same snapshot + same transactions" is not enough for replay;
+   it needs the same *sequence*. That is what the block builder decides in week 3, and why the sandwich exists.
+3. Property tests find bugs that worked examples cannot. Hypothesis found a division by zero on a 1-unit
+   swap and a dropped `base_asset` field, both in cases I would never have typed by hand. The invariants worth
+   writing are the ones a human can state in a sentence: k never decreases, no asset is created or destroyed.
+4. Integer-only arithmetic has an edge to design for. Floor rounding in the pool's favour makes the reported
+   slippage 39 bps where the exact value is 39.93, and a 1-unit BUY returns 0 base. Both are decisions
+   (ADR-0007), not accidents.
+5. Immutability has a price and the price is not linear. Copying a dict per transaction costs O(entries), but
+   the constant jumps ~14× when the values are objects that no longer fit in L2: a copy must touch every value
+   to bump its refcount. Week 1 was about queues; this week the bottleneck was the memory hierarchy.
+   Measure before trusting a "linear" intuition, and read the *per-entry* cost, not just the total.
+6. A nonce rule has to survive a wrong nonce. If BAD_NONCE consumed a nonce, one mis-numbered submission would
+   strand every correctly numbered transaction behind it. The other failures (balance, slippage) consume it so
+   a retry needs a new number and cannot execute twice.
 
 ## Questions carried to next week
 

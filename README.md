@@ -30,7 +30,7 @@ how amounts are represented, where the module boundaries are.
 | Week | Goal | Status |
 |---|---|---|
 | 1 | Requirements, SLOs, architecture, ADRs | done |
-| 2 | AMM + deterministic execution engine | in progress |
+| 2 | AMM + deterministic execution engine | done |
 | 3 | Mempool, block builder | |
 | 4 | Three bots, real-time UI, v0.0.1 | |
 | 5 | Kafka/Redpanda event pipeline | |
