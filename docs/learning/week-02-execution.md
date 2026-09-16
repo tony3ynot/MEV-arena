@@ -35,6 +35,26 @@ Pool: 1,000 ETH / 1,000,000 USDC, fee 30 bps.
   in `effective_price`; and `apply_swap` rebuilt `MarketState` by hand and dropped `base_asset`, which the
   "no asset is created or destroyed" property caught.
 
+## Follow-up: the cost of immutable state
+
+Experiment: [experiments/week-02-immutable-state](../../experiments/week-02-immutable-state/README.md).
+Prediction: µs per transaction grows linearly with the number of accounts, because every executed
+transaction copies the `balances` dict.
+
+| accounts | µs/tx | tx/s |
+|---|---|---|
+| 100 | 17 | 58,000 |
+| 1,000 | 42 | 24,000 |
+| 10,000 | 1,200 | 830 |
+
+Not linear: 10× accounts cost 2.4×, then 29×. Copying a 20,000-entry dict of dataclass values costs ≈ 600 µs,
+but the same dict with `int` values costs 86 µs. The copy has to touch every value object to bump its refcount,
+and 20,000 scattered objects no longer fit the core's L2 cache (512 KiB). Two balance copies per transaction
+account for the whole 1,200 µs.
+
+At 10,000 accounts the pure-copy design already misses the 5,000 tx/s target by 6×. Decision deferred to week 3
+(ADR): copy once per block and mutate inside with explicit revert, or a persistent map.
+
 ## What I learned
 
 <!-- fill in: your own words, 3–5 numbered points. Prompts:
