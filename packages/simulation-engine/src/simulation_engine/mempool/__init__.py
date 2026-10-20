@@ -15,7 +15,7 @@ from simulation_engine.models import Transaction
 
 class Admission(StrEnum):
     ACCEPTED = "accepted"
-    """New transaction stored."""
+    """New transaction stored. If the pool was full, it pushed out the cheapest one (ADR-0009)."""
     REPLACED = "replaced"
     """Stored; it evicted an earlier transaction with the same (account, nonce) and a lower fee."""
     DUPLICATE = "duplicate"
@@ -26,6 +26,16 @@ class Admission(StrEnum):
     """Same (account, nonce) as a stored transaction, fee not strictly higher. Rejected."""
     STALE_NONCE = "stale_nonce"
     """nonce below the account's next expected nonce. Rejected."""
+    POOL_FULL = "pool_full"
+    """Pool at max_size and the fee does not beat the cheapest stored transaction. Rejected."""
+
+
+@dataclass(frozen=True, slots=True)
+class AdmissionResult:
+    verdict: Admission
+    evicted: str | None = None
+    """Id of the transaction this admission pushed out: the one it REPLACED, or the cheapest one
+    when the pool was full. The caller reports it to its owner."""
 
 
 @dataclass
@@ -36,8 +46,11 @@ class Mempool:
     - one transaction per idempotency_key
     - one transaction per (account_id, nonce)
     - ``arrival`` is a strictly increasing sequence number, never reused
+    - at most ``max_size`` transactions
     """
 
+    max_size: int = 10_000
+    """Placeholder until the week-3 backpressure experiment gives a measured figure."""
     _by_id: dict[str, Transaction] = field(default_factory=dict[str, Transaction])
     _by_idempotency_key: dict[str, str] = field(default_factory=dict[str, str])
     """idempotency_key -> transaction id"""
@@ -48,6 +61,10 @@ class Mempool:
     _arrival: dict[str, int] = field(default_factory=dict[str, int])
     """transaction id -> arrival sequence number"""
     _next_arrival: int = 0
+
+    def __post_init__(self) -> None:
+        if self.max_size < 1:
+            raise ValueError(f"max_size must be at least 1, got {self.max_size}")
 
     def __len__(self) -> int:
         return len(self._by_id)
@@ -61,41 +78,52 @@ class Mempool:
     def arrival_of(self, tx_id: str) -> int:
         return self._arrival[tx_id]
 
-    def add(self, tx: Transaction, next_nonce: int) -> Admission:
+    def add(self, tx: Transaction, next_nonce: int) -> AdmissionResult:
         """Admit ``tx`` or say why not.
 
         ``next_nonce`` is the account's next expected nonce, read from world state by the caller.
-        Check order: idempotency_key -> nonce -> (account, nonce) replacement. Stop at the first
-        verdict. On REPLACED, the old transaction must disappear from *every* index.
+        Check order: idempotency_key -> nonce -> (account, nonce) replacement -> capacity. Stop at
+        the first verdict. On REPLACED, the old transaction must disappear from *every* index.
+        A replacement never needs room: it frees the slot it takes.
 
         Raises ``ValueError`` if ``tx.id`` is already pooled under another idempotency_key. Ids are
         assigned by the gateway, so a clash is a bug on our side, not a client error (ADR-0008).
         """
         if tx.idempotency_key in self._by_idempotency_key:
             known = self._by_id[self._by_idempotency_key[tx.idempotency_key]]
-            return Admission.DUPLICATE if known == tx else Admission.CONFLICT
+            return AdmissionResult(Admission.DUPLICATE if known == tx else Admission.CONFLICT)
 
         if tx.id in self._by_id:
             raise ValueError(f"transaction id {tx.id!r} is already pooled under another key")
 
         if tx.nonce < next_nonce:
-            return Admission.STALE_NONCE
+            return AdmissionResult(Admission.STALE_NONCE)
 
         slot = (tx.account_id, tx.nonce)
-        verdict = Admission.ACCEPTED
         if slot in self._by_account_nonce:
             occupant_id = self._by_account_nonce[slot]
             if tx.priority_fee <= self._by_id[occupant_id].priority_fee:
-                return Admission.UNDERPRICED
+                return AdmissionResult(Admission.UNDERPRICED)
             self.remove(occupant_id)
-            verdict = Admission.REPLACED
+            result = AdmissionResult(Admission.REPLACED, evicted=occupant_id)
+        elif len(self) < self.max_size:
+            result = AdmissionResult(Admission.ACCEPTED)
+        else:
+            # lowest fee first; on a tie, -arrival makes the latest comer the minimum (ADR-0009)
+            cheapest = min(
+                self._by_id, key=lambda i: (self._by_id[i].priority_fee, -self._arrival[i])
+            )
+            if tx.priority_fee <= self._by_id[cheapest].priority_fee:
+                return AdmissionResult(Admission.POOL_FULL)
+            self.remove(cheapest)
+            result = AdmissionResult(Admission.ACCEPTED, evicted=cheapest)
 
         self._by_id[tx.id] = tx
         self._by_idempotency_key[tx.idempotency_key] = tx.id
         self._by_account_nonce[slot] = tx.id
         self._arrival[tx.id] = self._next_arrival
         self._next_arrival += 1
-        return verdict
+        return result
 
     def remove(self, tx_id: str) -> None:
         """Drop a transaction from every index. No-op if absent."""
