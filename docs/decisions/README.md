@@ -17,5 +17,6 @@ The place for "why we chose this design". Only record the **reasoning** that can
 | [0007](0007-amm-and-execution-semantics.md) | AMM and execution semantics: scale 1e18, fee on input, revert-style failures, state hash | Accepted |
 | [0008](0008-gateway-assigns-transaction-ids.md) | The gateway assigns transaction ids; a clash in the mempool is a bug | Accepted |
 | [0009](0009-full-mempool-evicts-cheapest.md) | A full mempool evicts its cheapest transaction | Accepted |
+| [0010](0010-expiry-rule-and-candidate-set.md) | Expiry is inclusive, checked at admission; the builder gets an arrival-ordered tuple | Accepted |
 
 Template: [_template.md](_template.md)

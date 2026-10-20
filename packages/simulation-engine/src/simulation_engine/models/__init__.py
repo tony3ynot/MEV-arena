@@ -67,6 +67,11 @@ class Transaction:
     priority_fee: int
     submitted_at: int  # block height or ms timestamp supplied by the caller, never wall time
     expires_at: int
+    """Last block height this transaction may be included in."""
+
+    def is_expired(self, height: int) -> bool:
+        """The one expiry rule; every module asks this instead of comparing heights (ADR-0010)."""
+        return self.expires_at < height
 
 
 @dataclass(frozen=True, slots=True)

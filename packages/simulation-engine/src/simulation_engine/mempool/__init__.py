@@ -26,6 +26,8 @@ class Admission(StrEnum):
     """Same (account, nonce) as a stored transaction, fee not strictly higher. Rejected."""
     STALE_NONCE = "stale_nonce"
     """nonce below the account's next expected nonce. Rejected."""
+    EXPIRED = "expired"
+    """Already expired at the current block height. Rejected before it can evict (ADR-0010)."""
     POOL_FULL = "pool_full"
     """Pool at max_size and the fee does not beat the cheapest stored transaction. Rejected."""
 
@@ -41,6 +43,8 @@ class AdmissionResult:
 @dataclass
 class Mempool:
     """Pending transactions, keyed for the three lookups admission needs.
+
+    Per block, the caller runs ``expire(height)``, then hands ``candidates()`` to the block builder.
 
     Invariants (tests check them):
     - one transaction per idempotency_key
@@ -78,13 +82,14 @@ class Mempool:
     def arrival_of(self, tx_id: str) -> int:
         return self._arrival[tx_id]
 
-    def add(self, tx: Transaction, next_nonce: int) -> AdmissionResult:
+    def add(self, tx: Transaction, next_nonce: int, *, height: int) -> AdmissionResult:
         """Admit ``tx`` or say why not.
 
         ``next_nonce`` is the account's next expected nonce, read from world state by the caller.
-        Check order: idempotency_key -> nonce -> (account, nonce) replacement -> capacity. Stop at
-        the first verdict. On REPLACED, the old transaction must disappear from *every* index.
-        A replacement never needs room: it frees the slot it takes.
+        ``height`` is the block being built; a transaction already expired there is turned away.
+        Check order: idempotency_key -> expiry -> nonce -> (account, nonce) replacement ->
+        capacity. Stop at the first verdict. On REPLACED, the old transaction must disappear from
+        *every* index. A replacement never needs room: it frees the slot it takes.
 
         Raises ``ValueError`` if ``tx.id`` is already pooled under another idempotency_key. Ids are
         assigned by the gateway, so a clash is a bug on our side, not a client error (ADR-0008).
@@ -95,6 +100,9 @@ class Mempool:
 
         if tx.id in self._by_id:
             raise ValueError(f"transaction id {tx.id!r} is already pooled under another key")
+
+        if tx.is_expired(height):
+            return AdmissionResult(Admission.EXPIRED)
 
         if tx.nonce < next_nonce:
             return AdmissionResult(Admission.STALE_NONCE)
@@ -133,3 +141,14 @@ class Mempool:
         del self._by_idempotency_key[tx.idempotency_key]
         del self._by_account_nonce[(tx.account_id, tx.nonce)]
         del self._arrival[tx_id]
+
+    def expire(self, height: int) -> tuple[str, ...]:
+        """Drop every transaction expired at ``height``; return their ids in arrival order."""
+        expired = tuple(t.id for t in self.candidates() if t.is_expired(height))
+        for tx_id in expired:
+            self.remove(tx_id)
+        return expired
+
+    def candidates(self) -> tuple[Transaction, ...]:
+        """Every pooled transaction in arrival order, as a tuple the builder cannot edit."""
+        return tuple(sorted(self._by_id.values(), key=lambda t: self._arrival[t.id]))
