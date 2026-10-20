@@ -974,3 +974,15 @@ requires-dist = [{ name = "simulation-engine", editable = "packages/simulation-e
 name = "week-03-backpressure"
 version = "0.0.0"
 source = { virtual = "experiments/week-03-backpressure" }
+dependencies = [
+    { name = "fastapi" },
+    { name = "simulation-engine" },
+    { name = "uvicorn", extra = ["standard"] },
+]
+
+[package.metadata]
+requires-dist = [
+    { name = "fastapi", specifier = ">=0.115" },
+    { name = "simulation-engine", editable = "packages/simulation-engine" },
+    { name = "uvicorn", extras = ["standard"], specifier = ">=0.30" },
+]
