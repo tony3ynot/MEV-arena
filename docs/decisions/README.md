@@ -15,5 +15,6 @@ The place for "why we chose this design". Only record the **reasoning** that can
 | [0005](0005-k6-load-generator.md) | k6 for load generation; bot swarm in Python | Accepted |
 | [0006](0006-module-placement.md) | Pure core in simulation_engine; all I/O in mev_arena_api | Accepted |
 | [0007](0007-amm-and-execution-semantics.md) | AMM and execution semantics: scale 1e18, fee on input, revert-style failures, state hash | Accepted |
+| [0008](0008-gateway-assigns-transaction-ids.md) | The gateway assigns transaction ids; a clash in the mempool is a bug | Accepted |
 
 Template: [_template.md](_template.md)

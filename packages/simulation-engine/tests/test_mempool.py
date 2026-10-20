@@ -1,6 +1,13 @@
 from dataclasses import replace
 
 import pytest
+from hypothesis import strategies as st
+from hypothesis.stateful import (
+    RuleBasedStateMachine,
+    invariant,
+    rule,
+    run_state_machine_as_test,  # pyright: ignore[reportUnknownVariableType]
+)
 from simulation_engine.mempool import Admission, Mempool
 from simulation_engine.models import SCALE, Side, Transaction
 
@@ -97,3 +104,86 @@ def test_remove_is_idempotent_and_clears_indexes():
     pool.remove("a")
     assert len(pool) == 0
     assert pool.add(tx("a"), 0) is Admission.ACCEPTED
+
+
+def test_reused_id_under_another_key_raises():
+    pool = Mempool()
+    pool.add(tx("a", nonce=0, key="k1"), 0)
+    with pytest.raises(ValueError):
+        pool.add(tx("a", nonce=1, key="k2"), 0)
+    assert len(pool) == 1 and pool.get("a") == tx("a", nonce=0, key="k1")
+
+
+# Small pools so random draws collide often: shared keys, shared (account, nonce) slots, shared ids.
+IDS = [f"t{i}" for i in range(6)]
+transactions = st.builds(
+    tx,
+    id=st.sampled_from(IDS),
+    account=st.sampled_from(["alice", "bob"]),
+    nonce=st.integers(0, 2),
+    fee=st.integers(0, 2),
+    key=st.sampled_from([f"k{i}" for i in range(8)]),
+)
+
+
+class MempoolMachine(RuleBasedStateMachine):
+    """Random add/remove sequences. Every verdict must match what visibly changed in the pool."""
+
+    def __init__(self) -> None:
+        super().__init__()
+        self.pool = Mempool()
+        self.last_arrival = -1
+
+    def live(self) -> dict[str, Transaction]:
+        return {i: t for i in IDS if (t := self.pool.get(i)) is not None}
+
+    @rule(t=transactions, next_nonce=st.integers(0, 2))
+    def add(self, t: Transaction, next_nonce: int) -> None:
+        before = self.live()
+        same_key = [o for o in before.values() if o.idempotency_key == t.idempotency_key]
+        same_slot = [
+            o for o in before.values() if (o.account_id, o.nonce) == (t.account_id, t.nonce)
+        ]
+
+        if not same_key and t.id in before:  # id clash is a caller bug (ADR-0008)
+            with pytest.raises(ValueError):
+                self.pool.add(t, next_nonce)
+            assert self.live() == before
+            return
+
+        verdict = self.pool.add(t, next_nonce)
+        after = self.live()
+
+        if verdict in (Admission.ACCEPTED, Admission.REPLACED):
+            assert after.get(t.id) == t
+            assert len(after) == len(before) + (1 if verdict is Admission.ACCEPTED else 0)
+            assert self.pool.arrival_of(t.id) > self.last_arrival
+            self.last_arrival = self.pool.arrival_of(t.id)
+            return
+
+        assert after == before  # every rejection leaves the pool untouched
+        if verdict is Admission.DUPLICATE:
+            assert same_key == [t]
+        elif verdict is Admission.CONFLICT:
+            assert len(same_key) == 1 and same_key[0] != t
+        elif verdict is Admission.UNDERPRICED:
+            assert len(same_slot) == 1 and same_slot[0].priority_fee >= t.priority_fee
+        else:
+            assert verdict is Admission.STALE_NONCE and t.nonce < next_nonce
+
+    @rule(tx_id=st.sampled_from(IDS))
+    def remove(self, tx_id: str) -> None:
+        before = self.live()
+        self.pool.remove(tx_id)
+        assert self.live() == {i: t for i, t in before.items() if i != tx_id}
+
+    @invariant()
+    def one_per_key_and_per_slot(self) -> None:
+        live = self.live()
+        assert len(self.pool) == len(live)
+        assert len({t.idempotency_key for t in live.values()}) == len(live)
+        assert len({(t.account_id, t.nonce) for t in live.values()}) == len(live)
+
+
+def test_verdicts_match_visible_changes():
+    run_state_machine_as_test(MempoolMachine)

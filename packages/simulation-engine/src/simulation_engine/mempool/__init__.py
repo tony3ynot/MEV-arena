@@ -67,10 +67,16 @@ class Mempool:
         ``next_nonce`` is the account's next expected nonce, read from world state by the caller.
         Check order: idempotency_key -> nonce -> (account, nonce) replacement. Stop at the first
         verdict. On REPLACED, the old transaction must disappear from *every* index.
+
+        Raises ``ValueError`` if ``tx.id`` is already pooled under another idempotency_key. Ids are
+        assigned by the gateway, so a clash is a bug on our side, not a client error (ADR-0008).
         """
         if tx.idempotency_key in self._by_idempotency_key:
             known = self._by_id[self._by_idempotency_key[tx.idempotency_key]]
             return Admission.DUPLICATE if known == tx else Admission.CONFLICT
+
+        if tx.id in self._by_id:
+            raise ValueError(f"transaction id {tx.id!r} is already pooled under another key")
 
         if tx.nonce < next_nonce:
             return Admission.STALE_NONCE
