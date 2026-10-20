@@ -68,10 +68,34 @@ class Mempool:
         Check order: idempotency_key -> nonce -> (account, nonce) replacement. Stop at the first
         verdict. On REPLACED, the old transaction must disappear from *every* index.
         """
-        # TODO: implement
-        raise NotImplementedError
+        if tx.idempotency_key in self._by_idempotency_key:
+            known = self._by_id[self._by_idempotency_key[tx.idempotency_key]]
+            return Admission.DUPLICATE if known == tx else Admission.CONFLICT
+
+        if tx.nonce < next_nonce:
+            return Admission.STALE_NONCE
+
+        slot = (tx.account_id, tx.nonce)
+        verdict = Admission.ACCEPTED
+        if slot in self._by_account_nonce:
+            occupant_id = self._by_account_nonce[slot]
+            if tx.priority_fee <= self._by_id[occupant_id].priority_fee:
+                return Admission.UNDERPRICED
+            self.remove(occupant_id)
+            verdict = Admission.REPLACED
+
+        self._by_id[tx.id] = tx
+        self._by_idempotency_key[tx.idempotency_key] = tx.id
+        self._by_account_nonce[slot] = tx.id
+        self._arrival[tx.id] = self._next_arrival
+        self._next_arrival += 1
+        return verdict
 
     def remove(self, tx_id: str) -> None:
         """Drop a transaction from every index. No-op if absent."""
-        # TODO: implement
-        raise NotImplementedError
+        tx = self._by_id.pop(tx_id, None)
+        if tx is None:
+            return
+        del self._by_idempotency_key[tx.idempotency_key]
+        del self._by_account_nonce[(tx.account_id, tx.nonce)]
+        del self._arrival[tx_id]
