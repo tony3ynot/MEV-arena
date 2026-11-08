@@ -1,0 +1,6 @@
+# Next.js generates this on every dev/build run.
+next-env.d.ts
+
+# The root .gitignore ignores every .env.* file (spec §17: no secrets in the repo).
+# .env.development holds only public NEXT_PUBLIC_* defaults (mock mode on), so it is committed.
+!.env.development

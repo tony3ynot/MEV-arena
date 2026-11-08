@@ -1,0 +1,103 @@
+@import "tailwindcss";
+
+/*
+ * Color tokens. Values come from the dataviz reference palette (validated for color-vision deficiency
+ * in both modes); components use the role names from @theme below, never raw hex.
+ */
+:root {
+  color-scheme: light;
+  --page: #f9f9f7;
+  --surface: #fcfcfb;
+  --raised: #f1f0ec;
+  --ink: #0b0b0b;
+  --ink-2: #52514e;
+  --muted: #898781;
+  --line: rgba(11, 11, 11, 0.1);
+  --grid: #e1e0d9;
+  --axis: #c3c2b7;
+  /* categorical slots: 1 blue, 2 orange, 3 aqua, 4 yellow; 8 red for the negative pole */
+  --s-blue: #2a78d6;
+  --s-orange: #eb6834;
+  --s-aqua: #1baf7a;
+  --s-yellow: #eda100;
+  --s-red: #e34948;
+  --track: #cde2fb;
+  /* status: always paired with an icon or a label */
+  --good: #0ca30c;
+  --warning: #fab219;
+  --critical: #d03b3b;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    color-scheme: dark;
+    --page: #0d0d0d;
+    --surface: #1a1a19;
+    --raised: #242423;
+    --ink: #f0efec;
+    --ink-2: #c3c2b7;
+    --muted: #898781;
+    --line: rgba(255, 255, 255, 0.1);
+    --grid: #2c2c2a;
+    --axis: #383835;
+    --s-blue: #3987e5;
+    --s-orange: #d95926;
+    --s-aqua: #199e70;
+    --s-yellow: #c98500;
+    --s-red: #e66767;
+    --track: #0d366b;
+  }
+}
+
+:root[data-theme="dark"] {
+  color-scheme: dark;
+  --page: #0d0d0d;
+  --surface: #1a1a19;
+  --raised: #242423;
+  --ink: #f0efec;
+  --ink-2: #c3c2b7;
+  --muted: #898781;
+  --line: rgba(255, 255, 255, 0.1);
+  --grid: #2c2c2a;
+  --axis: #383835;
+  --s-blue: #3987e5;
+  --s-orange: #d95926;
+  --s-aqua: #199e70;
+  --s-yellow: #c98500;
+  --s-red: #e66767;
+  --track: #0d366b;
+}
+
+@theme inline {
+  --color-page: var(--page);
+  --color-surface: var(--surface);
+  --color-raised: var(--raised);
+  --color-ink: var(--ink);
+  --color-ink-2: var(--ink-2);
+  --color-muted: var(--muted);
+  --color-line: var(--line);
+  --color-grid: var(--grid);
+  --color-axis: var(--axis);
+  --color-track: var(--track);
+  --color-good: var(--good);
+  --color-warning: var(--warning);
+  --color-critical: var(--critical);
+  /* chart series */
+  --color-amm: var(--s-blue);
+  --color-reference: var(--s-aqua);
+  /* account kinds: noise traders are the gray background crowd, the bots carry the accent hues */
+  --color-kind-noise: var(--muted);
+  --color-kind-arb: var(--s-aqua);
+  --color-kind-sandwich: var(--s-orange);
+  --color-kind-user: var(--s-yellow);
+  /* polarity (P&L) */
+  --color-pos: var(--s-blue);
+  --color-neg: var(--s-red);
+  --font-sans: system-ui, -apple-system, "Segoe UI", sans-serif;
+  --font-mono: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+}
+
+body {
+  background: var(--page);
+  color: var(--ink);
+}
