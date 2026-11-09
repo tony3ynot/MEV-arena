@@ -12,7 +12,15 @@ from hypothesis import example, given
 from hypothesis import strategies as st
 from simulation_engine.amm import apply_swap, get_amount_out
 from simulation_engine.block_builder import BuilderPolicy, build_block
-from simulation_engine.bots import BotView, Order, SandwichBot, max_front_run
+from simulation_engine.bots import (
+    ArbitrageBot,
+    BotView,
+    NoiseTrader,
+    Order,
+    SandwichBot,
+    max_front_run,
+    next_reference_price,
+)
 from simulation_engine.execution import WorldState, execute_block
 from simulation_engine.models import (
     BPS,
@@ -262,3 +270,223 @@ def test_priority_fee_builder_wraps_the_victim_and_the_bot_profits(
     after, receipts = execute_block(view.state, block, 1)
     assert all(r.status is TransactionStatus.EXECUTED for r in receipts)
     assert after.balance_of(BOT.account_id, profit_asset) > BOT_START[profit_asset]
+
+
+# --- NoiseTrader -------------------------------------------------------------------------------
+
+TRADER = NoiseTrader("noise-0", "eth-usdc", activity=1.0)
+TRADER_NONCE = 4
+SEEDS = range(2_000)
+
+
+def _trader_view(
+    eth: int = 10**6 * SCALE, usdc: int = 10**9 * SCALE, *pending: Transaction
+) -> BotView:
+    balances = {
+        (TRADER.account_id, "ETH"): AccountBalance(TRADER.account_id, "ETH", eth),
+        (TRADER.account_id, "USDC"): AccountBalance(TRADER.account_id, "USDC", usdc),
+    }
+    state = WorldState(
+        markets={"eth-usdc": MARKET}, balances=balances, nonces={TRADER.account_id: TRADER_NONCE}
+    )
+    return BotView(height=7, state=state, pending=pending, reference_price=MARKET.last_price)
+
+
+def _orders(trader: NoiseTrader = TRADER, view: BotView | None = None) -> list[Order]:
+    """One decision per seed, flattened: what the trader would send over many blocks."""
+    view = view or _trader_view()
+    return [o for seed in SEEDS for o in trader.decide(view, random.Random(seed))]
+
+
+def _share(hits: int, total: int) -> float:
+    return hits / total
+
+
+def test_noise_order_fields():
+    (order,) = TRADER.decide(_trader_view(), random.Random(0))
+
+    assert (order.account_id, order.market_id, order.nonce) == (
+        TRADER.account_id,
+        "eth-usdc",
+        TRADER_NONCE,
+    )
+    assert order.expires_at == 7 + TRADER.ttl
+    assert 0 <= order.priority_fee <= TRADER.max_fee
+
+
+def test_noise_trades_one_at_a_time():
+    own = _tx("own", TRADER.account_id, Side.SELL, SCALE, nonce=TRADER_NONCE)
+    assert TRADER.decide(_trader_view(10**6 * SCALE, 10**9 * SCALE, own), random.Random(0)) == ()
+
+
+def test_activity_is_the_chance_of_trading():
+    assert _orders(replace(TRADER, activity=0.0)) == []
+    assert len(_orders(TRADER)) == len(SEEDS)
+    assert abs(_share(len(_orders(replace(TRADER, activity=0.3))), len(SEEDS)) - 0.3) < 0.04
+
+
+def test_min_amount_out_is_the_quote_less_the_tolerance():
+    for order in _orders()[:200]:
+        if order.side is Side.SELL:
+            quote = get_amount_out(
+                order.amount_in, MARKET.base_reserve, MARKET.quote_reserve, MARKET.fee_bps
+            )
+        else:
+            quote = get_amount_out(
+                order.amount_in, MARKET.quote_reserve, MARKET.base_reserve, MARKET.fee_bps
+            )
+        assert order.min_amount_out == quote * (BPS - TRADER.tolerance_bps) // BPS
+
+
+def test_sides_are_a_fair_coin_and_fees_stay_in_range():
+    orders = _orders()
+    sells = sum(o.side is Side.SELL for o in orders)
+
+    assert abs(_share(sells, len(orders)) - 0.5) < 0.04
+    assert all(0 <= o.priority_fee <= TRADER.max_fee for o in orders)
+
+
+def test_sizes_are_log_uniform_in_base_units():
+    """Each decade of 0.1–30 ETH gets the same share: log 10 / log 300 ≈ 0.40."""
+    orders = _orders()
+    price = MARKET.last_price
+    sizes = [o.amount_in if o.side is Side.SELL else o.amount_in * SCALE // price for o in orders]
+    decade = 0.4037
+
+    assert all(TRADER.min_size - 1 <= s <= TRADER.max_size for s in sizes)
+    assert abs(_share(sum(s < SCALE for s in sizes), len(sizes)) - decade) < 0.04
+    assert abs(_share(sum(s > 3 * SCALE for s in sizes), len(sizes)) - decade) < 0.04
+
+
+def test_noise_never_spends_more_than_it_has():
+    poor = _trader_view(eth=SCALE // 2, usdc=0)
+    orders = _orders(view=poor)
+
+    assert orders, "it can still sell what it has"
+    assert all(o.side is Side.SELL and o.amount_in <= SCALE // 2 for o in orders)
+    assert _orders(view=_trader_view(eth=0, usdc=0)) == []
+
+
+def test_noise_is_a_function_of_view_and_seed():
+    """Every random choice, including whether to trade at all, comes from ``rng``."""
+    sometimes = replace(TRADER, activity=0.3)
+    assert _orders(sometimes) == _orders(sometimes)
+
+
+# --- reference price and ArbitrageBot ----------------------------------------------------------
+
+ARB = ArbitrageBot("arb-0", "eth-usdc")
+G = BPS - MARKET.fee_bps  # what is left of each unit after the pool fee
+
+
+def test_reference_step_stays_within_its_volatility():
+    price = MARKET.last_price
+    steps = [next_reference_price(price, random.Random(seed), 10) for seed in SEEDS]
+
+    assert all(price * (BPS - 10) // BPS <= p <= price * (BPS + 10) // BPS for p in steps)
+    assert any(p > price for p in steps) and any(p < price for p in steps)
+    assert next_reference_price(price, random.Random(0), 0) == price
+
+
+def test_reference_walk_is_reproducible():
+    def walk(seed: int) -> list[int]:
+        rng, price, path = random.Random(seed), MARKET.last_price, list[int]()
+        for _ in range(100):
+            price = next_reference_price(price, rng, 10)
+            path.append(price)
+        return path
+
+    assert walk(7) == walk(7)
+    assert walk(7) != walk(8)
+
+
+def _arb_view(gap_bps: int, eth: int = 10**6 * SCALE, usdc: int = 10**9 * SCALE) -> BotView:
+    """The reference price sits ``gap_bps`` above (positive) or below the pool price."""
+    balances = {
+        (ARB.account_id, "ETH"): AccountBalance(ARB.account_id, "ETH", eth),
+        (ARB.account_id, "USDC"): AccountBalance(ARB.account_id, "USDC", usdc),
+    }
+    state = WorldState(markets={"eth-usdc": MARKET}, balances=balances, nonces={ARB.account_id: 2})
+    reference = MARKET.last_price * (BPS + gap_bps) // BPS
+    return BotView(height=7, state=state, pending=(), reference_price=reference)
+
+
+def _profit_at_reference(side: Side, amount_in: int, reference: int) -> int:
+    """In quote: what the trade's output is worth at the reference price, less what it cost."""
+    _, out = apply_swap(MARKET, side, amount_in)
+    if side is Side.BUY:
+        return out * reference // SCALE - amount_in
+    return out - amount_in * reference // SCALE
+
+
+@pytest.mark.parametrize("gap_bps", [-29, -10, 0, 10, 29])
+def test_arb_does_nothing_inside_the_fee_band(gap_bps: int):
+    assert ARB.decide(_arb_view(gap_bps), random.Random(0)) == ()
+
+
+@pytest.mark.parametrize(("gap_bps", "side"), [(50, Side.BUY), (-50, Side.SELL)])
+def test_arb_buys_a_cheap_pool_and_sells_a_dear_one(gap_bps: int, side: Side):
+    (order,) = ARB.decide(_arb_view(gap_bps), random.Random(0))
+
+    assert (order.account_id, order.market_id, order.side, order.nonce) == (
+        ARB.account_id,
+        "eth-usdc",
+        side,
+        2,
+    )
+    assert (order.priority_fee, order.expires_at) == (ARB.priority_fee, 7 + ARB.ttl)
+
+
+@pytest.mark.parametrize("gap_bps", [-1_000, -200, -50, 50, 200, 1_000])
+def test_arb_size_maximizes_profit_at_the_reference_price(gap_bps: int):
+    view = _arb_view(gap_bps)
+    (order,) = ARB.decide(view, random.Random(0))
+    best = _profit_at_reference(order.side, order.amount_in, view.reference_price)
+
+    assert best > 0
+    for other in (order.amount_in * 99 // 100, order.amount_in * 101 // 100):
+        assert _profit_at_reference(order.side, other, view.reference_price) <= best
+
+
+@pytest.mark.parametrize("gap_bps", [-1_000, -200, -50, 50, 200, 1_000])
+def test_arb_leaves_the_pool_just_inside_the_near_edge_of_the_band(gap_bps: int):
+    """Afterwards no further arbitrage pays, and the price stopped near the edge it crossed.
+
+    It lands slightly inside, not exactly on the edge: the fee stays in the pool and moves
+    the price a little further, by about 1.5 bps for a 10 % gap.
+    """
+    view = _arb_view(gap_bps)
+    (order,) = ARB.decide(view, random.Random(0))
+    price = apply_swap(MARKET, order.side, order.amount_in)[0].last_price
+    ref = view.reference_price
+    edge = ref * G // BPS if order.side is Side.BUY else ref * BPS // G
+
+    assert ref * G <= price * BPS and price * G <= ref * BPS  # inside the band
+    assert abs(price - edge) <= 2 * ref // BPS
+
+
+@pytest.mark.parametrize("gap_bps", [-200, 200])
+def test_arb_min_amount_out_is_break_even_rounded_up(gap_bps: int):
+    view = _arb_view(gap_bps)
+    (order,) = ARB.decide(view, random.Random(0))
+    ref, a, m = view.reference_price, order.amount_in, order.min_amount_out
+
+    if order.side is Side.BUY:  # base out, worth m * ref / SCALE quote
+        assert m * ref >= a * SCALE > (m - 1) * ref
+    else:  # quote out, for base worth a * ref / SCALE
+        assert m * SCALE >= a * ref > (m - 1) * SCALE
+    fresh = replace(order.to_transaction("arb", "k", 7), account_id="victim", nonce=0)
+    assert _fills(MARKET, fresh, 0), "on the state it was sized for, the order executes"
+
+
+def test_arb_never_spends_more_than_it_has():
+    (order,) = ARB.decide(_arb_view(1_000, eth=0, usdc=1_000 * SCALE), random.Random(0))
+    assert (order.side, order.amount_in) == (Side.BUY, 1_000 * SCALE)
+
+    assert ARB.decide(_arb_view(1_000, eth=10**6 * SCALE, usdc=0), random.Random(0)) == ()
+
+
+def test_arb_trades_one_at_a_time():
+    view = _arb_view(200)
+    own = _tx("own", ARB.account_id, Side.BUY, SCALE, nonce=2)
+    assert ARB.decide(replace(view, pending=(own,)), random.Random(0)) == ()

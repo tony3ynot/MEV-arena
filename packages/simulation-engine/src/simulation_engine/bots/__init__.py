@@ -5,13 +5,14 @@ A bot keeps no state of its own: everything it knows is in its ``BotView``, so t
 the same seed always give the same orders, and a replay needs nothing saved about the bots.
 """
 
+import math
 import random
 from dataclasses import dataclass
 from typing import Protocol
 
-from simulation_engine.amm import apply_swap
+from simulation_engine.amm import apply_swap, get_amount_out
 from simulation_engine.execution import WorldState
-from simulation_engine.models import SCALE, MarketState, Side, Transaction
+from simulation_engine.models import BPS, SCALE, MarketState, Side, Transaction
 
 
 @dataclass(frozen=True, slots=True)
@@ -167,5 +168,140 @@ class SandwichBot:
                 0,
                 victim.priority_fee,
                 victim.expires_at,
+            ),
+        )
+
+
+@dataclass(frozen=True, slots=True)
+class NoiseTrader:
+    """Uninformed flow: now and then one swap of random side, size and fee.
+
+    At each height it trades with probability ``activity``, and never while one of its own
+    transactions is still pending. The side is a fair coin. The size is log-uniform between
+    ``min_size`` and ``max_size`` in base units; a buy pays the same value in quote at the pool
+    price. It never spends more than its balance, and with nothing to spend it does nothing.
+    ``min_amount_out`` is its quote on ``view.state`` less ``tolerance_bps`` (slippage measured
+    against the quote, as wallets do). The fee is uniform in ``[0, max_fee]``, the nonce is the
+    account's next one, and the order expires ``ttl`` blocks after ``view.height``.
+    """
+
+    account_id: str
+    market_id: str
+    activity: float = 0.3
+    min_size: int = SCALE // 10
+    max_size: int = 30 * SCALE
+    tolerance_bps: int = 100
+    max_fee: int = 100
+    ttl: int = 5
+
+    def decide(self, view: BotView, rng: random.Random) -> tuple[Order, ...]:
+        if any(tx.account_id == self.account_id for tx in view.pending):
+            return ()
+        if rng.random() >= self.activity:
+            return ()
+
+        market = view.state.markets[self.market_id]
+        side = rng.choice((Side.BUY, Side.SELL))
+        size = int(math.exp(rng.uniform(math.log(self.min_size), math.log(self.max_size))))
+        if side is Side.SELL:
+            asset_in, reserve_in, reserve_out = (
+                market.base_asset,
+                market.base_reserve,
+                market.quote_reserve,
+            )
+            amount_in = size
+        else:
+            asset_in, reserve_in, reserve_out = (
+                market.quote_asset,
+                market.quote_reserve,
+                market.base_reserve,
+            )
+            amount_in = size * market.last_price // SCALE
+        amount_in = min(amount_in, view.state.balance_of(self.account_id, asset_in))
+        if amount_in <= 0:
+            return ()
+
+        quote = get_amount_out(amount_in, reserve_in, reserve_out, market.fee_bps)
+        return (
+            Order(
+                self.account_id,
+                view.state.next_nonce(self.account_id),
+                self.market_id,
+                side,
+                amount_in,
+                quote * (BPS - self.tolerance_bps) // BPS,
+                rng.randint(0, self.max_fee),
+                view.height + self.ttl,
+            ),
+        )
+
+
+def next_reference_price(price: int, rng: random.Random, volatility_bps: int) -> int:
+    """One block of the external price's random walk.
+
+    The price moves by a whole number of bps drawn uniformly from
+    ``[-volatility_bps, volatility_bps]``, rounded down. Integer arithmetic only, so the walk is
+    the same on every platform. The runtime carries the result from block to block and puts it
+    in ``BotView.reference_price``; because it depends on the previous value, it is state and
+    belongs in snapshots.
+    """
+    return price * (BPS + rng.randint(-volatility_bps, volatility_bps)) // BPS
+
+
+@dataclass(frozen=True, slots=True)
+class ArbitrageBot:
+    """Trades the pool back toward the reference price once the gap is worth the pool fee.
+
+    Buying base costs the pool price plus the fee, selling base fetches the pool price less the
+    fee. So with ``g = BPS - fee_bps`` the bot buys when ``pool * BPS < reference * g``, sells
+    when ``pool * g > reference * BPS``, and otherwise does nothing. It trades the size that
+    maximizes its profit valued at the reference price, capped by its balance, which leaves the
+    pool at the near edge of that no-arbitrage band. ``min_amount_out`` is the break-even output
+    at the reference price, rounded up, so an order that went stale reverts instead of losing.
+    It reads only the committed state, trades one order at a time, and the order expires
+    ``ttl`` blocks after ``view.height``.
+    """
+
+    account_id: str
+    market_id: str
+    priority_fee: int = 10
+    ttl: int = 1
+
+    def decide(self, view: BotView, rng: random.Random) -> tuple[Order, ...]:
+        if any(tx.account_id == self.account_id for tx in view.pending):
+            return ()
+        market = view.state.markets[self.market_id]
+        ref, g = view.reference_price, BPS - market.fee_bps
+        x, y, pool = market.base_reserve, market.quote_reserve, market.last_price
+
+        if pool * BPS < ref * g:
+            side, asset_in, reserve_in, reserve_out = Side.BUY, market.quote_asset, y, x
+            root = math.isqrt(x * y * g * ref // (BPS * SCALE))  # √(x·y·γ·P)
+            amount_in = (root - y) * BPS // g  # (√… − y) / γ
+        elif pool * g > ref * BPS:
+            side, asset_in, reserve_in, reserve_out = Side.SELL, market.base_asset, x, y
+            root = math.isqrt(x * y * g * SCALE // (BPS * ref))
+            amount_in = (root - x) * BPS // g
+        else:
+            return ()
+
+        amount_in = min(amount_in, view.state.balance_of(self.account_id, asset_in))
+        if amount_in <= 0:
+            return ()
+        # breakeven quantity
+        min_out = -(-amount_in * SCALE // ref) if side is Side.BUY else -(-amount_in * ref // SCALE)
+
+        if get_amount_out(amount_in, reserve_in, reserve_out, market.fee_bps) < min_out:
+            return ()
+        return (
+            Order(
+                self.account_id,
+                view.state.next_nonce(self.account_id),
+                self.market_id,
+                side,
+                amount_in,
+                min_out,
+                self.priority_fee,
+                view.height + self.ttl,
             ),
         )

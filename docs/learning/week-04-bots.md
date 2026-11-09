@@ -21,12 +21,17 @@ victim's `min_amount_out`.
 | Victim tolerance 0.5 % → 1 %: bot profit × ? | at most × 2 | |
 | Is the largest front-run the victim's `min_amount_out` allows also the most profitable? | no | |
 | Bot sized its front-run on the block-start state; a noise sell lands between front-run and victim | victim loses more, bot earns more | |
+| Noise sizes log-uniform in 0.1–30 ETH; a sandwich pays only above fee × reserve = 3 ETH. Share of noise swaps worth sandwiching | log 10 / log 300 ≈ 40 % | |
+| Reference price moves uniformly within ±10 bps per block, no-arbitrage band ±30 bps, no noise traders. Share of blocks in which the arbitrage bot trades | 0.3 % | |
 
 ## Results
 
 ## What I learned
 
 ## Questions carried to next week
+
+- Arbitrage that back-runs large pending swaps instead of reading only the committed state. It competes with the
+  sandwich back-run for the same slot and wants bundles, so it waits for ADR-0012; week 8 extra or v0.2.
 
 ## References
 
