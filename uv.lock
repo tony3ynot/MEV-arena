@@ -1,5 +1,5 @@
 version = 1
-revision = 3
+revision = 5
 requires-python = ">=3.12"
 
 [manifest]
@@ -10,6 +10,7 @@ members = [
     "week-01-performance",
     "week-02-immutable-state",
     "week-03-backpressure",
+    "week-04-ordering-policies",
 ]
 
 [[package]]
@@ -986,3 +987,14 @@ requires-dist = [
     { name = "simulation-engine", editable = "packages/simulation-engine" },
     { name = "uvicorn", extras = ["standard"], specifier = ">=0.30" },
 ]
+
+[[package]]
+name = "week-04-ordering-policies"
+version = "0.0.0"
+source = { virtual = "experiments/week-04-ordering-policies" }
+dependencies = [
+    { name = "simulation-engine" },
+]
+
+[package.metadata]
+requires-dist = [{ name = "simulation-engine", editable = "packages/simulation-engine" }]
