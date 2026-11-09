@@ -29,12 +29,12 @@ flowchart LR
 | mempool | `simulation_engine.mempool` | dedup, nonce rules, bounded queue, expiry, immutable candidate set | week 3 |
 | block-builder | `simulation_engine.block_builder` | FIFO / priority-fee / random / adversarial policies; capacity; carry-over | week 3 |
 | bot-swarm (strategies) | `simulation_engine.bots` | NoiseTrader, ArbitrageBot, SandwichBot as pure decision functions of (observed state, seed) | week 4 |
-| bot-swarm (runner) | `mev_arena_api.bot_swarm` | drives strategies on the simulation clock and submits their transactions | week 4 |
-| gateway | `mev_arena_api.gateway` | REST + WebSocket, validation, rate limit, idempotency keys, bounded client buffers | week 3–4 |
+| bot-swarm (runner) | `mev_arena_api.bot_swarm` | drives strategies on the simulation clock and submits their transactions | week 5 (moved from 4) |
+| gateway | `mev_arena_api.gateway` | REST + WebSocket, validation, rate limit, idempotency keys, bounded client buffers | week 5 (moved from 3–4) |
 | projection | `mev_arena_api.projection` | Redis read models: price, leaderboard, mempool summary; rebuildable | week 6 |
 | observability | `mev_arena_api.observability` | OpenTelemetry spans and metrics from spec §16 | week 7 |
 | (runtime, pure part) | `simulation_engine.arena` | one block: reference price → expire → bots → admission → build → execute; seeds derived per block. Called by experiments and by `mev_arena_api.simulation` | week 4 |
-| (runtime, not in spec list) | `mev_arena_api.simulation` | the 3-second clock: build → execute → commit → publish; pause/step/replay control | week 3 |
+| (runtime, not in spec list) | `mev_arena_api.simulation` | the 3-second clock: build → execute → commit → publish; pause/step/replay control | week 5 (moved from 3) |
 | | `mev_arena_api.ledger` | PostgreSQL authoritative store: blocks, receipts, balances, event log | week 6 |
 | | `mev_arena_api.stream` | Kafka/Redpanda producer and consumers; outbox | week 5 |
 | | `mev_arena_api.snapshot` | snapshot store | week 6 |

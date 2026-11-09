@@ -32,7 +32,7 @@ how amounts are represented, where the module boundaries are.
 | 1 | Requirements, SLOs, architecture, ADRs | done |
 | 2 | AMM + deterministic execution engine | done |
 | 3 | Mempool, block builder | done |
-| 4 | Three bots, real-time UI, v0.0.1 | |
+| 4 | Three bots, real-time UI, v0.0.1 | bots, arena step, policy experiment done; UI on mock data. Runtime, live UI and v0.0.1 moved to week 5 |
 | 5 | Kafka/Redpanda event pipeline | |
 | 6 | PostgreSQL ledger, Redis projection, snapshot/replay | |
 | 7 | OpenTelemetry, Grafana, load and failure tests | |
