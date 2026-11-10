@@ -10,7 +10,9 @@ from collections.abc import Sequence
 from dataclasses import dataclass
 from typing import Literal
 
+from simulation_engine.block_builder import BuilderPolicy
 from simulation_engine.execution import WorldState
+from simulation_engine.mempool import Admission
 from simulation_engine.models import (
     ErrorCode,
     ExecutionReceipt,
@@ -25,12 +27,15 @@ EventType = Literal[
     "TransactionRejected",
     "BlockProposed",
     "TransactionExecuted",
+    "TransactionDropped",
     "SwapExecuted",
     "BlockCommitted",
     "MarketPriceUpdated",
     "SnapshotCreated",
     "ProjectionRebuilt",
 ]
+
+DropReason = Literal["expired", "replaced", "evicted"]
 
 
 @dataclass(frozen=True, slots=True)
@@ -40,6 +45,31 @@ class TransactionExecuted:
     position: int
     status: TransactionStatus
     error_code: ErrorCode | None
+
+
+@dataclass(frozen=True, slots=True)
+class TransactionAccepted:
+    transaction: Transaction
+
+
+@dataclass(frozen=True, slots=True)
+class TransactionRejected:
+    idempotency_key: str
+    account_id: str
+    reason: Admission
+
+
+@dataclass(frozen=True, slots=True)
+class BlockProposed:
+    height: int
+    policy: BuilderPolicy
+    transaction_ids: tuple[str, ...]
+
+
+@dataclass(frozen=True, slots=True)
+class TransactionDropped:
+    transaction_id: str
+    reason: DropReason
 
 
 @dataclass(frozen=True, slots=True)
@@ -73,7 +103,16 @@ class BlockCommitted:
     failed: int
 
 
-Payload = TransactionExecuted | SwapExecuted | MarketPriceUpdated | BlockCommitted
+Payload = (
+    TransactionAccepted
+    | TransactionRejected
+    | TransactionDropped
+    | BlockProposed
+    | TransactionExecuted
+    | SwapExecuted
+    | MarketPriceUpdated
+    | BlockCommitted
+)
 
 
 @dataclass(frozen=True, slots=True)

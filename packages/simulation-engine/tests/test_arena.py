@@ -1,11 +1,12 @@
 """run_block: one block of bots → mempool → builder → execution, deterministic from one seed."""
 
 import random
+from collections.abc import Iterable
 from dataclasses import dataclass, field, replace
 
 import pytest
 from simulation_engine.amm import get_amount_out
-from simulation_engine.arena import ArenaConfig, BlockOutcome, run_block
+from simulation_engine.arena import ArenaConfig, BlockOutcome, events_for_outcome, run_block
 from simulation_engine.block_builder import BuilderPolicy
 from simulation_engine.bots import (
     ArbitrageBot,
@@ -15,6 +16,14 @@ from simulation_engine.bots import (
     Order,
     SandwichBot,
     next_reference_price,
+)
+from simulation_engine.events import (
+    BlockProposed,
+    Payload,
+    TransactionAccepted,
+    TransactionDropped,
+    TransactionExecuted,
+    TransactionRejected,
 )
 from simulation_engine.execution import WorldState, execute_block, state_hash
 from simulation_engine.mempool import Admission, Mempool
@@ -249,3 +258,93 @@ def test_the_builder_seed_differs_per_block():
         for h in range(1, 6)
     }
     assert len(shuffles) > 1
+
+
+# ---- events_for_outcome --------------------------------------------------------------------
+
+
+def _events(after: WorldState, out: BlockOutcome, policy: BuilderPolicy = CONFIG.policy):
+    return events_for_outcome(out, policy, after, state_hash(after))
+
+
+def _track(pending: set[str], events: Iterable[Payload]) -> set[str]:
+    """What a stream consumer such as the UI reducer knows of the pool, from the events alone."""
+    pending = set(pending)
+    for e in events:
+        match e:
+            case TransactionAccepted():
+                pending.add(e.transaction.id)
+            case TransactionDropped() | TransactionExecuted():
+                pending.discard(e.transaction_id)
+            case _:
+                pass
+    return pending
+
+
+@pytest.mark.parametrize("policy", list(BuilderPolicy))
+def test_the_events_alone_track_the_mempool(policy: BuilderPolicy):
+    """A small pool and a small block force expiries and evictions along the way."""
+    noise = [NoiseTrader(f"noise-{i}", "eth-usdc") for i in range(10)]
+    bots: list[Bot] = [*noise, ArbitrageBot("arb-0", "eth-usdc"), SandwichBot("sandwich-0")]
+    world = _world(*(b.account_id for b in bots))
+    pool, price, pending = Mempool(max_size=8), PRICE, set[str]()
+    config = ArenaConfig(policy, capacity=3, seed=11)
+    reasons: set[str] = set()
+    for height in range(1, 41):
+        world, out = run_block(
+            world, pool, bots, height=height, reference_price=price, config=config
+        )
+        price = out.reference_price
+        events = _events(world, out, policy)
+        pending = _track(pending, events)
+        reasons |= {e.reason for e in events if isinstance(e, TransactionDropped)}
+        assert pending == {t.id for t in pool.candidates()}, f"height {height}"
+    assert {"expired", "evicted"} <= reasons, "the run exercised both drop paths"
+
+
+def test_one_block_emits_drops_and_verdicts_then_the_block_then_its_execution():
+    pool = Mempool()
+    pool.add(_order("a", expires=1).to_transaction("old", "a:old", 0), 0, height=1)
+    world = _world("a", "b", nonces={"b": 1})
+    bots: list[Bot] = [Scripted("a", (_order("a"),)), Scripted("b", (_order("b", nonce=0),))]
+    after, out = _run(world, bots, height=2, mempool=pool)
+
+    events = _events(after, out)
+    assert [type(e).__name__ for e in events] == [
+        "TransactionDropped",
+        "TransactionAccepted",
+        "TransactionRejected",
+        "BlockProposed",
+        "TransactionExecuted",
+        "SwapExecuted",
+        "MarketPriceUpdated",
+        "BlockCommitted",
+    ]
+    assert events[:4] == (
+        TransactionDropped("old", "expired"),
+        TransactionAccepted(out.submissions[0].transaction),
+        TransactionRejected("b:2:0", "b", Admission.STALE_NONCE),
+        BlockProposed(2, CONFIG.policy, ("2.0",)),
+    )
+
+
+def test_a_replacement_reports_what_it_pushed_out():
+    pool = Mempool()
+    pool.add(_order("a", fee=1).to_transaction("cheap", "a:cheap", 0), 0, height=1)
+    after, out = _run(_world("a"), [Scripted("a", (_order("a", fee=5),))], mempool=pool)
+
+    assert _events(after, out)[:2] == (
+        TransactionAccepted(out.submissions[0].transaction),
+        TransactionDropped("cheap", "replaced"),
+    )
+
+
+def test_a_full_pool_reports_the_cheapest_as_evicted():
+    pool = Mempool(max_size=1)
+    pool.add(_order("b", fee=1).to_transaction("cheap", "b:cheap", 0), 0, height=1)
+    after, out = _run(_world("a", "b"), [Scripted("a", (_order("a", fee=5),))], mempool=pool)
+
+    assert _events(after, out)[:2] == (
+        TransactionAccepted(out.submissions[0].transaction),
+        TransactionDropped("cheap", "evicted"),
+    )

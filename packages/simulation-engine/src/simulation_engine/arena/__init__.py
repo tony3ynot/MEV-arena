@@ -11,8 +11,17 @@ from dataclasses import dataclass
 
 from simulation_engine.block_builder import BuilderPolicy, build_block
 from simulation_engine.bots import Bot, BotView, Order, next_reference_price
+from simulation_engine.events import (
+    BlockProposed,
+    DropReason,
+    Payload,
+    TransactionAccepted,
+    TransactionDropped,
+    TransactionRejected,
+    events_for_block,
+)
 from simulation_engine.execution import WorldState, execute_block
-from simulation_engine.mempool import AdmissionResult, Mempool
+from simulation_engine.mempool import Admission, AdmissionResult, Mempool
 from simulation_engine.models import ExecutionReceipt, Transaction
 
 
@@ -108,3 +117,32 @@ def run_block(
     for tx in block:
         mempool.remove(tx.id)
     return after, BlockOutcome(height, ref, expired, tuple(submissions), block, receipts)
+
+
+def events_for_outcome(
+    outcome: BlockOutcome, policy: BuilderPolicy, after: WorldState, state_root: str
+) -> tuple[Payload, ...]:
+    """Every event one block produces, in emission order.
+
+    Expired transactions are dropped first. Then each submission in arrival order: accepted
+    (followed by a drop of whatever it replaced or evicted) or rejected. Then the proposed block,
+    then what ``events_for_block`` derives from its execution.
+
+    ``policy`` is the one ``run_block`` was called with. ``after`` is the state the block produced
+    and ``state_root`` its hash; the caller computes the hash once and reuses it for snapshots.
+    Replaying these events over the mempool as it was before the block (accepted: add; dropped or
+    executed: remove) gives the mempool after it.
+    """
+    out: list[Payload] = [TransactionDropped(tx_id, "expired") for tx_id in outcome.expired]
+    for sub in outcome.submissions:
+        verdict, tx = sub.result.verdict, sub.transaction
+        if verdict in (Admission.ACCEPTED, Admission.REPLACED):
+            out.append(TransactionAccepted(tx))
+            if sub.result.evicted is not None:
+                reason: DropReason = "replaced" if verdict is Admission.REPLACED else "evicted"
+                out.append(TransactionDropped(sub.result.evicted, reason))
+        else:
+            out.append(TransactionRejected(tx.idempotency_key, tx.account_id, verdict))
+    out.append(BlockProposed(outcome.height, policy, tuple(tx.id for tx in outcome.block)))
+    out.extend(events_for_block(outcome.block, outcome.receipts, after, outcome.height, state_root))
+    return tuple(out)
