@@ -34,11 +34,16 @@ export type AccountKind = "noise" | "arb" | "sandwich" | "user";
 export type TxStatus = "executed" | "failed";
 export type ErrorCode = "slippage" | "insufficient_balance" | "bad_nonce" | "unknown_market";
 /**
- * Why the mempool turned a submission away. The engine's `Admission` verdicts map as:
- * STALE_NONCE -> "bad_nonce", POOL_FULL -> "pool_full", EXPIRED -> "expired", DUPLICATE -> "duplicate",
- * CONFLICT -> "conflict", UNDERPRICED -> "underpriced".
+ * Why the mempool turned a submission away: the engine's `Admission` verdict values, sent as they are.
+ * ("stale_nonce" is an admission verdict; "bad_nonce" in ErrorCode is an execution failure.)
  */
-export type RejectReason = "pool_full" | "bad_nonce" | "expired" | "duplicate" | "conflict" | "underpriced";
+export type RejectReason = "pool_full" | "stale_nonce" | "expired" | "duplicate" | "conflict" | "underpriced";
+/**
+ * Why a pending transaction left the mempool without being included in a block.
+ * expired: past its expiresAt (ADR-0010). replaced: same (account, nonce) with a higher fee came in.
+ * evicted: the pool was full and a higher-fee transaction pushed out the cheapest (ADR-0009).
+ */
+export type DropReason = "expired" | "replaced" | "evicted";
 
 export const POLICIES: readonly Policy[] = ["fifo", "priority_fee", "random", "adversarial"];
 export const ACCOUNT_KINDS: readonly AccountKind[] = ["noise", "arb", "sandwich", "user"];
@@ -144,6 +149,11 @@ export interface TransactionRejected {
   reason: RejectReason;
 }
 
+export interface TransactionDropped {
+  transactionId: string;
+  reason: DropReason;
+}
+
 export interface BlockProposed {
   height: number;
   policy: Policy;
@@ -205,9 +215,12 @@ interface EnvelopeBase {
 /**
  * An event, discriminated by `eventType`. Delivery is at-least-once, so the reducer drops repeated eventIds.
  *
- * Emission order per block: BlockProposed, then per transaction TransactionExecuted (+ SwapExecuted if it
- * executed), then MarketPriceUpdated (only if at least one swap executed, as in the engine), then
- * BlockCommitted. Executed and failed transactions leave the mempool; transactions not selected stay.
+ * Emission order per block: TransactionDropped for each expired transaction; then each submission in
+ * arrival order as TransactionAccepted or TransactionRejected, an Accepted one followed by TransactionDropped
+ * if it replaced or evicted another; then BlockProposed; then per transaction TransactionExecuted
+ * (+ SwapExecuted if it executed); then MarketPriceUpdated (only if at least one swap executed, as in the
+ * engine); then BlockCommitted. Executed and failed transactions leave the mempool; transactions not
+ * selected stay.
  *
  * Event types the UI does not know (TransactionSubmitted, SnapshotCreated, ...) pass `parseFrame` and are
  * ignored by the reducer.
@@ -215,6 +228,7 @@ interface EnvelopeBase {
 export type Envelope =
   | (EnvelopeBase & { eventType: "TransactionAccepted"; payload: TransactionAccepted })
   | (EnvelopeBase & { eventType: "TransactionRejected"; payload: TransactionRejected })
+  | (EnvelopeBase & { eventType: "TransactionDropped"; payload: TransactionDropped })
   | (EnvelopeBase & { eventType: "BlockProposed"; payload: BlockProposed })
   | (EnvelopeBase & { eventType: "TransactionExecuted"; payload: TransactionExecuted })
   | (EnvelopeBase & { eventType: "SwapExecuted"; payload: SwapExecuted })
@@ -377,6 +391,7 @@ const SHAPES: Record<string, Shape> = {
   Envelope: { strings: ["eventId", "eventType", "aggregateId", "occurredAt", "correlationId", "causationId"], numbers: ["eventVersion"] },
   TransactionAccepted: {},
   TransactionRejected: { strings: ["idempotencyKey", "accountId", "reason"] },
+  TransactionDropped: { strings: ["transactionId", "reason"] },
   BlockProposed: { strings: ["policy"], numbers: ["height"], arrays: ["transactionIds"] },
   TransactionExecuted: { strings: ["transactionId", "status"], numbers: ["blockHeight", "position"] },
   SwapExecuted: {
@@ -396,6 +411,7 @@ const SHAPES: Record<string, Shape> = {
 const PAYLOAD_SHAPE: Record<string, string> = {
   TransactionAccepted: "TransactionAccepted",
   TransactionRejected: "TransactionRejected",
+  TransactionDropped: "TransactionDropped",
   BlockProposed: "BlockProposed",
   TransactionExecuted: "TransactionExecuted",
   SwapExecuted: "SwapExecuted",

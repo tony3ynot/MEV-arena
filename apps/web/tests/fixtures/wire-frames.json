@@ -1,0 +1,282 @@
+[
+  {
+    "kind": "snapshot",
+    "simulation": {
+      "status": "running",
+      "height": 4,
+      "policy": "priority_fee",
+      "seed": 42,
+      "capacity": 10,
+      "blockIntervalMs": 3000,
+      "nextBlockAt": "2026-11-10T00:00:18.000Z"
+    },
+    "market": {
+      "marketId": "eth-usdc",
+      "baseAsset": "ETH",
+      "quoteAsset": "USDC",
+      "baseReserve": "1000000000000000000000",
+      "quoteReserve": "1000000000000000000000000",
+      "feeBps": 30,
+      "price": "1000000000000000000000",
+      "version": 0,
+      "referencePrice": "1001000000000000000000"
+    },
+    "mempool": [
+      {
+        "id": "4.0",
+        "idempotencyKey": "noise-1:4.0",
+        "accountId": "noise-1",
+        "nonce": 0,
+        "marketId": "eth-usdc",
+        "side": "sell",
+        "amountIn": "2000000000000000000",
+        "minAmountOut": "10000000000000000000000",
+        "priorityFee": "0",
+        "submittedAt": 4,
+        "expiresAt": 9
+      },
+      {
+        "id": "4.1",
+        "idempotencyKey": "noise-2:4.1",
+        "accountId": "noise-2",
+        "nonce": 0,
+        "marketId": "eth-usdc",
+        "side": "sell",
+        "amountIn": "1000000000000000000",
+        "minAmountOut": "0",
+        "priorityFee": "0",
+        "submittedAt": 3,
+        "expiresAt": 4
+      }
+    ],
+    "recentBlocks": [],
+    "accounts": [
+      {
+        "accountId": "noise-1",
+        "kind": "noise",
+        "startBase": "100000000000000000000",
+        "startQuote": "100000000000000000000000",
+        "baseBalance": "100000000000000000000",
+        "quoteBalance": "100000000000000000000000"
+      },
+      {
+        "accountId": "noise-2",
+        "kind": "noise",
+        "startBase": "100000000000000000000",
+        "startQuote": "100000000000000000000000",
+        "baseBalance": "100000000000000000000",
+        "quoteBalance": "100000000000000000000000"
+      },
+      {
+        "accountId": "arb-0",
+        "kind": "arb",
+        "startBase": "100000000000000000000",
+        "startQuote": "100000000000000000000000",
+        "baseBalance": "100000000000000000000",
+        "quoteBalance": "100000000000000000000000"
+      },
+      {
+        "accountId": "sandwich-0",
+        "kind": "sandwich",
+        "startBase": "100000000000000000000",
+        "startQuote": "100000000000000000000000",
+        "baseBalance": "100000000000000000000",
+        "quoteBalance": "100000000000000000000000"
+      }
+    ]
+  },
+  {
+    "kind": "event",
+    "event": {
+      "eventId": "00000000-0000-4000-8000-000000000000",
+      "eventType": "TransactionDropped",
+      "eventVersion": 1,
+      "aggregateId": "eth-usdc",
+      "occurredAt": "2026-11-10T00:00:15.000Z",
+      "correlationId": "00000000-0000-4000-8000-b10c00000005",
+      "causationId": "00000000-0000-4000-8000-b10c00000005",
+      "payload": {
+        "transactionId": "4.1",
+        "reason": "expired"
+      }
+    }
+  },
+  {
+    "kind": "event",
+    "event": {
+      "eventId": "00000000-0000-4000-8000-000000000001",
+      "eventType": "TransactionAccepted",
+      "eventVersion": 1,
+      "aggregateId": "eth-usdc",
+      "occurredAt": "2026-11-10T00:00:15.000Z",
+      "correlationId": "00000000-0000-4000-8000-b10c00000005",
+      "causationId": "00000000-0000-4000-8000-b10c00000005",
+      "payload": {
+        "transaction": {
+          "id": "5.0",
+          "idempotencyKey": "arb-0:5.0",
+          "accountId": "arb-0",
+          "nonce": 0,
+          "marketId": "eth-usdc",
+          "side": "sell",
+          "amountIn": "3000000000000000000",
+          "minAmountOut": "0",
+          "priorityFee": "7",
+          "submittedAt": 5,
+          "expiresAt": 9
+        }
+      }
+    }
+  },
+  {
+    "kind": "event",
+    "event": {
+      "eventId": "00000000-0000-4000-8000-000000000002",
+      "eventType": "TransactionRejected",
+      "eventVersion": 1,
+      "aggregateId": "eth-usdc",
+      "occurredAt": "2026-11-10T00:00:15.000Z",
+      "correlationId": "00000000-0000-4000-8000-b10c00000005",
+      "causationId": "00000000-0000-4000-8000-b10c00000005",
+      "payload": {
+        "idempotencyKey": "sandwich-0:5:0",
+        "accountId": "sandwich-0",
+        "reason": "stale_nonce"
+      }
+    }
+  },
+  {
+    "kind": "event",
+    "event": {
+      "eventId": "00000000-0000-4000-8000-000000000003",
+      "eventType": "BlockProposed",
+      "eventVersion": 1,
+      "aggregateId": "eth-usdc",
+      "occurredAt": "2026-11-10T00:00:15.000Z",
+      "correlationId": "00000000-0000-4000-8000-b10c00000005",
+      "causationId": "00000000-0000-4000-8000-b10c00000005",
+      "payload": {
+        "height": 5,
+        "policy": "priority_fee",
+        "transactionIds": [
+          "5.0",
+          "4.0"
+        ]
+      }
+    }
+  },
+  {
+    "kind": "event",
+    "event": {
+      "eventId": "00000000-0000-4000-8000-000000000004",
+      "eventType": "TransactionExecuted",
+      "eventVersion": 1,
+      "aggregateId": "eth-usdc",
+      "occurredAt": "2026-11-10T00:00:15.000Z",
+      "correlationId": "00000000-0000-4000-8000-b10c00000005",
+      "causationId": "00000000-0000-4000-8000-b10c00000005",
+      "payload": {
+        "transactionId": "5.0",
+        "blockHeight": 5,
+        "position": 0,
+        "status": "executed",
+        "errorCode": null
+      }
+    }
+  },
+  {
+    "kind": "event",
+    "event": {
+      "eventId": "00000000-0000-4000-8000-000000000005",
+      "eventType": "SwapExecuted",
+      "eventVersion": 1,
+      "aggregateId": "eth-usdc",
+      "occurredAt": "2026-11-10T00:00:15.000Z",
+      "correlationId": "00000000-0000-4000-8000-b10c00000005",
+      "causationId": "00000000-0000-4000-8000-b10c00000005",
+      "payload": {
+        "transactionId": "5.0",
+        "marketId": "eth-usdc",
+        "accountId": "arb-0",
+        "side": "sell",
+        "amountIn": "3000000000000000000",
+        "amountOut": "2982080596934568705003",
+        "effectivePrice": "994026865644856235001",
+        "slippageBps": 59,
+        "feePaid": "9000000000000000"
+      }
+    }
+  },
+  {
+    "kind": "event",
+    "event": {
+      "eventId": "00000000-0000-4000-8000-000000000006",
+      "eventType": "TransactionExecuted",
+      "eventVersion": 1,
+      "aggregateId": "eth-usdc",
+      "occurredAt": "2026-11-10T00:00:15.000Z",
+      "correlationId": "00000000-0000-4000-8000-b10c00000005",
+      "causationId": "00000000-0000-4000-8000-b10c00000005",
+      "payload": {
+        "transactionId": "4.0",
+        "blockHeight": 5,
+        "position": 1,
+        "status": "failed",
+        "errorCode": "slippage"
+      }
+    }
+  },
+  {
+    "kind": "event",
+    "event": {
+      "eventId": "00000000-0000-4000-8000-000000000007",
+      "eventType": "MarketPriceUpdated",
+      "eventVersion": 1,
+      "aggregateId": "eth-usdc",
+      "occurredAt": "2026-11-10T00:00:15.000Z",
+      "correlationId": "00000000-0000-4000-8000-b10c00000005",
+      "causationId": "00000000-0000-4000-8000-b10c00000005",
+      "payload": {
+        "marketId": "eth-usdc",
+        "price": "994035811967163939476",
+        "baseReserve": "1003000000000000000000",
+        "quoteReserve": "997017919403065431294997",
+        "version": 1
+      }
+    }
+  },
+  {
+    "kind": "event",
+    "event": {
+      "eventId": "00000000-0000-4000-8000-000000000008",
+      "eventType": "BlockCommitted",
+      "eventVersion": 1,
+      "aggregateId": "eth-usdc",
+      "occurredAt": "2026-11-10T00:00:15.000Z",
+      "correlationId": "00000000-0000-4000-8000-b10c00000005",
+      "causationId": "00000000-0000-4000-8000-b10c00000005",
+      "payload": {
+        "height": 5,
+        "stateRoot": "10c72f7e6a75c807bb527991df74246a17da4e67ac97355be4fc024d89e6cad3",
+        "transactionIds": [
+          "5.0",
+          "4.0"
+        ],
+        "executed": 1,
+        "failed": 1
+      }
+    }
+  },
+  {
+    "kind": "simulation",
+    "state": {
+      "status": "running",
+      "height": 5,
+      "policy": "priority_fee",
+      "seed": 42,
+      "capacity": 10,
+      "blockIntervalMs": 3000,
+      "nextBlockAt": "2026-11-10T00:00:18.000Z"
+    }
+  }
+]

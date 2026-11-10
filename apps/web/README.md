@@ -21,7 +21,7 @@ npm run dev            # http://localhost:3000, mock mode (see .env.development)
 | Command | What it does |
 |---|---|
 | `npm run dev` | dev server with hot reload |
-| `npm test` | unit tests (vitest): reducer, mock AMM/builder/simulation, stream reconnects |
+| `npm test` | unit tests (vitest): reducer, mock AMM/builder/simulation, stream reconnects, gateway frames |
 | `npm run lint` | ESLint (Next.js core-web-vitals + TypeScript rules) |
 | `npm run typecheck` | `tsc --noEmit` |
 | `npm run build` / `npm start` | production build / serve it |
@@ -60,6 +60,7 @@ lib/mock/           the mock "server": sim.ts (world + mempool + bots + builder)
                     amm.ts, execution.ts, builder.ts, bots.ts, rng.ts
 components/         Arena (root, client), Header, PriceChart, MempoolPanel, BlocksPanel, PnlPanel, ui
 tests/              vitest
+tests/fixtures/     wire-frames.json: real gateway frames, written by apps/api/tests/test_wire.py
 ```
 
 Data flow: backend (mock or real) → JSON text frames → `parseFrame` (checks the contract) → `reduce` →
@@ -91,8 +92,8 @@ same parsing as real ones.
   target and draw the reference line on the chart. If the gateway leaves them out, the line disappears.
 - **State roots** are a 64-hex FNV hash, not sha256. They never match the engine's.
 - **Event ids** are deterministic UUID-shaped strings.
-- **The mempool** rejects with `pool_full` instead of evicting the cheapest transaction (ADR-0009), because the
-  contract has no eviction event yet.
+- **The mempool** rejects with `pool_full` instead of evicting the cheapest transaction (ADR-0009). The contract
+  now has `TransactionDropped(evicted)`, so the mock could evict like the engine; it does not yet.
 - **The "drop connection" button** in the header exists only in mock mode. It cuts the stream so you can
   watch the reconnect and the snapshot rebuild.
 
@@ -110,10 +111,10 @@ same parsing as real ones.
 
 Open contract points for the gateway (the UI works around each today):
 
-- There is no event for a transaction that leaves the mempool without executing. On expiry, the reducer applies
-  the ADR-0010 rule itself at every `BlockCommitted`. Replacement is handled by dropping any older
-  transaction with the same `(accountId, nonce)`. Eviction from a full pool (ADR-0009) is invisible until
-  the next snapshot. A `TransactionDropped {transactionId, reason}` event would close this gap.
+- `TransactionDropped {transactionId, reason: expired | replaced | evicted}` reports a transaction that leaves
+  the mempool without executing; the engine sends it, the mock does not. So the reducer still applies the
+  ADR-0010 expiry rule itself at every `BlockCommitted` and drops an older transaction with the same
+  `(accountId, nonce)` on replacement. Both can go once the mock sends `TransactionDropped`.
 - There is no sequence number on frames. Overlap between the snapshot and the first events is detected by
   height (for block events) and by known transaction ids (for `TransactionAccepted`). A `seq` on every frame,
   plus the last `seq` included in the snapshot, would make this exact.

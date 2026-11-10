@@ -378,7 +378,7 @@ export class MockSimulation {
     const sameKey = this.mempool.find((t) => t.idempotencyKey === tx.idempotencyKey);
     if (sameKey) return reject(samePayload(sameKey, tx) ? "duplicate" : "conflict");
     if (tx.expiresAt < this.height + 1) return reject("expired");
-    if (tx.nonce < nextNonce(this.world, tx.accountId)) return reject("bad_nonce");
+    if (tx.nonce < nextNonce(this.world, tx.accountId)) return reject("stale_nonce");
     const occupant = this.mempool.find((t) => t.accountId === tx.accountId && t.nonce === tx.nonce);
     if (occupant) {
       if (tx.priorityFee <= occupant.priorityFee) return reject("underpriced");

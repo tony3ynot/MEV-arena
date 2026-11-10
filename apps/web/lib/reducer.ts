@@ -27,6 +27,7 @@ import {
   type SnapshotFrame,
   type SwapExecuted,
   type TransactionAccepted,
+  type TransactionDropped,
   type TransactionExecuted,
   type TransactionRejected,
   type Tx,
@@ -177,6 +178,8 @@ function applyEvent(state: ArenaState, event: Envelope): ArenaState {
       return onAccepted(s, event.payload);
     case "TransactionRejected":
       return onRejected(s, event.payload);
+    case "TransactionDropped":
+      return onDropped(s, event.payload);
     case "BlockProposed":
       return onProposed(s, event.payload);
     case "TransactionExecuted":
@@ -213,6 +216,10 @@ function onRejected(s: ArenaState, p: TransactionRejected): ArenaState {
       recent: [p, ...r.recent].slice(0, MAX_RECENT_REJECTIONS),
     },
   };
+}
+
+function onDropped(s: ArenaState, p: TransactionDropped): ArenaState {
+  return { ...s, mempool: s.mempool.filter((t) => t.id !== p.transactionId) };
 }
 
 function onProposed(s: ArenaState, p: BlockProposed): ArenaState {
@@ -298,8 +305,9 @@ function onCommitted(s: ArenaState, p: BlockCommitted): ArenaState {
     building: null,
     blocks: [...s.blocks, block].slice(-MAX_BLOCKS),
     prices,
-    // The contract has no event for a transaction that expires in the pool. Apply the engine's rule
-    // (ADR-0010): at the next block, height + 1, anything with expiresAt < height + 1 can never be included.
+    // The engine sends TransactionDropped at the start of the next block; the mock does not. Applying the
+    // rule (ADR-0010) here as well removes the same transactions one block earlier: at height + 1, anything
+    // with expiresAt < height + 1 can never be included. Remove this once the mock sends TransactionDropped.
     mempool: s.mempool.filter((t) => t.expiresAt > p.height),
   };
 }
